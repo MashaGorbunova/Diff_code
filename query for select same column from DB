@@ -1,0 +1,8 @@
+$table = \Yii::$app->db->createCommand("SELECT DISTINCT TABLE_NAME, COLUMN_NAME, DATA_TYPE, COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE COLUMN_NAME LIKE '%langid%' AND TABLE_SCHEMA='gccdb';
+")->queryAll();
+        $data = 'TABLE_NAME;COLUMN_NAME;DATA_TYPE;COLUMN_TYPE' . PHP_EOL;
+        foreach ($table as $row) {
+            $data .= implode(';', $row) . PHP_EOL;
+        }
+
+        file_put_contents("/var/restful/langIdData.csv", $data);
