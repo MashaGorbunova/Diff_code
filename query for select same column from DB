@@ -5,4 +5,4 @@ $table = \Yii::$app->db->createCommand("SELECT DISTINCT TABLE_NAME, COLUMN_NAME,
             $data .= implode(';', $row) . PHP_EOL;
         }
 
-        file_put_contents("/var/restful/langIdData.csv", $data);
+        file_put_contents("/langIdData.csv", $data);
