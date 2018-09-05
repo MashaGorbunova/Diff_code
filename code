@@ -3,3 +3,126 @@ $ids = explode(',', $this->selector);
         $a = array_filter($ids, function ($haystack) use ($needle) {
             return(strpos($haystack, $needle));
         });
+        
+        
+      
+    /**
+     * Get array with duplicate value by 2 columns in a multi-dimensional array
+     *
+     * @param array $array
+     * @param string $key1
+     * @param string $key2
+     * @return array
+     */
+    public static function getDuplicateArrayByTwoColumn(array $array, $key1, $key2)
+    {
+        $newArray = [];
+        $duplicate = [];
+
+        foreach ($array as $item) {
+            if (isset($item[$key1], $item[$key2])) {
+                $key = $key1 . trim(serialize($item[$key1])) . $key2 . trim(serialize($item[$key2]));
+                if (!isset($newArray[$key])) {
+                    $newArray[$key] = [
+                        $key1 => $item[$key1],
+                        $key2 => $item[$key2],
+                    ];
+                } else {
+                    $duplicate[] = [
+                        $key1 => $item[$key1],
+                        $key2 => $item[$key2],
+                    ];
+                }
+            }
+        }
+        return $duplicate;
+    }
+
+    /**
+     * Get array with duplicate value by 1 column in a multi-dimensional array
+     *
+     * @param array $array
+     * @param string $key
+     * @return array
+     */
+    public static function getDuplicateArrayByOneColumn(array $array, $key)
+    {
+        $newArray = [];
+
+        foreach ($array as $item) {
+            $newArray[] = array_map('trim', $item);
+        }
+        return static::getArrayDuplicates(array_column($newArray, $key));
+    }
+
+/**
+     * Check unique values by 2 columns in a multi-dimensional array
+     * if true - input array is unique, else - false
+     *
+     * @param array $array
+     * @param string $key1
+     * @param string $key2
+     * @return bool
+     */
+    public static function checkUniqueValuesByTwoColumn(array $array, $key1, $key2)
+    {
+        $result = [];
+
+        foreach ($array as $key => $item) {
+            if (isset($item[$key1], $item[$key2])) {
+                $result[$key] = $key1 . trim(serialize($item[$key1])) . $key2 . trim(serialize($item[$key2]));
+            }
+        }
+
+        if (count($result) === count(array_unique($result))) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Check unique values by 1 column in a multi-dimensional array
+     * if true - input array is unique, else - false
+     *
+     * @param array $array
+     * @param string $key
+     * @return bool
+     */
+    public static function checkUniqueValueByOneColumn(array $array, $key)
+    {
+        foreach ($array as $item) {
+            $newArray[] = array_map('trim', $item);
+        }
+        $result = array_column($newArray, $key);
+        if (count($result) === count(array_unique($result))) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Trim all strings in array or trim some string by some keys
+     *
+     * @param array $array
+     * @param array $keys
+     * @return array
+     */
+    public static function trimStringInArray(array $array, array $keys = [])
+    {
+        $result = [];
+
+        foreach ($array as $key => $item) {
+            if (is_array($item)) {
+                $result[$key] = static::trimStringInArray($item);
+            } else {
+                if ((is_string($item) && empty($keys)) || (!empty($keys) && in_array($key, $keys, true))) {
+                    $result[$key] = trim($item);
+                } else {
+                    $result[$key] = $item;
+                }
+            }
+        }
+
+        return $result;
+    }
