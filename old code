@@ -1,0 +1,19 @@
+/**
+     * Sends a file to the browser.
+     * @param $hash
+     * @throws \yii\web\HttpException
+     */
+    protected static function sendFileByHash($hash)
+    {
+        $queryParams = Yii::$app->request->getQueryParams();
+        if (isset($queryParams['download']) && strtoupper(trim($queryParams['download'])) == 'Y') {
+            $dirPath = Yii::$app->params['storage']['galleryDownloader'] . $hash; // same path with galleryDownloader
+            if (file_exists($dirPath)) {
+                foreach (glob($dirPath . '/*.zip') as $fileName) {
+                    Yii::$app->response->sendFile($fileName);
+                }
+            } else {
+                throw new HttpException(404, "The dir {$dirPath} does not exist.");
+            }
+        }
+    }
