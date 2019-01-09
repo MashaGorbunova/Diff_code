@@ -17,3 +17,32 @@
             }
         }
     }
+
+
+public function actionProductName()
+    {
+        $arr = [];
+        if (($handle1 = fopen("testData.csv", "r")) !== FALSE) {
+            while (($data1 = fgetcsv($handle1, 1000, ",")) !== FALSE) {
+                $arr[] = [$data1[0], $data1[1]];
+            }
+            fclose($handle1);
+        }
+
+        $text = ["Part Number",  "Brand", "ProductName EN"];
+        $handle2 = fopen("report.csv", "wb");
+
+        fputcsv($handle2, $text);
+
+        if (($handle = fopen("/tmp/test.csv", "r")) !== FALSE) {
+            while (($data = fgetcsv($handle, 1000, ",")) !== FALSE) {
+                foreach ($arr as $key => $value) {
+                    if ($data[1] == $value[0]) {
+                        fputcsv($handle2, array_merge($value, [$data[5]]));
+                    }
+                }
+            }
+            fclose($handle);
+        }
+        fclose($handle2);
+    }
