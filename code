@@ -126,3 +126,22 @@ $ids = explode(',', $this->selector);
 
         return $result;
     }
+    
+    //single type of all variables - string
+        array_walk_recursive($value, function (&$item) {
+            if ($item instanceof \stdClass) {
+                $item = Json::decode(Json::encode($item), true);
+
+                array_walk_recursive($item, function (&$item) {
+                    if (is_int($item) || is_float($item)) {
+                        $item = (string)$item;
+                    }
+                });
+                $item = (object)$item;
+            } else {
+                if (is_int($item) || is_float($item)) {
+                    $item = (string)$item;
+                }
+            }
+        });
+
