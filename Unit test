@@ -1,0 +1,41 @@
+public function testDeleteProductSuccess()
+    {
+        $mainProduct = $this->dataProvider['mainProduct'];
+        $mergingProducts = [$this->dataProvider['mergingProduct_1'], $this->dataProvider['mergingProduct_2']];
+
+        $atsModels = [
+            $this->getMockAts($mainProduct),
+            $this->getMockAts($this->dataProvider['mergingProduct_1']),
+            $this->getMockAts($this->dataProvider['mergingProduct_2'])
+        ];
+        $atsMockObject = Test::double(Ats::class, ['findAll' => $atsModels]);
+
+        $productModels = [
+            $this->getMockProduct($mainProduct),
+            $this->getMockProduct($this->dataProvider['mergingProduct_1']),
+            $this->getMockProduct($this->dataProvider['mergingProduct_2'])
+        ];
+        $productMockObject = Test::double(Product::class, ['findAll' => $productModels]);
+
+        $atsMergingExecutorMockObject = $this->getMockAtsExecutorHelper($mainProduct, $mergingProducts, [
+            'getProductSaver',
+            'updateProductInAts',
+            'deleteProductsInAts'
+        ]);
+
+        $atsMergingExecutorMockObject->expects($this->once())->method('updateProductInAts')->willReturn(1);
+        $atsMergingExecutorMockObject->expects($this->once())->method('deleteProductsInAts')->willReturn(1);
+        $atsMergingExecutorMockObject->expects($this->exactly(2))->method('getProductSaver')
+            ->withConsecutive(...[
+                [$this->getMockProduct($this->dataProvider['mergingProduct_1'])],
+                [$this->getMockProduct($this->dataProvider['mergingProduct_2'])]
+            ])->willReturnOnConsecutiveCalls(
+                $this->getProductSaverForDelete($this->dataProvider['mergingProduct_1']),
+                $this->getProductSaverForDelete($this->dataProvider['mergingProduct_2'])
+            );
+
+        $result = $atsMergingExecutorMockObject->doAtsMerging();
+        $this->assertNull($result);
+        $atsMockObject->verifyInvokedMultipleTimes('findAll', 0, [$mainProduct, $this->dataProvider['mergingProduct_1'], $this->dataProvider['mergingProduct_2']]);
+        $productMockObject->verifyInvokedMultipleTimes('findAll', 0, [$mainProduct, $this->dataProvider['mergingProduct_1'], $this->dataProvider['mergingProduct_2']]);
+    }
