@@ -39,3 +39,37 @@ public function testDeleteProductSuccess()
         $atsMockObject->verifyInvokedMultipleTimes('findAll', 0, [$mainProduct, $this->dataProvider['mergingProduct_1'], $this->dataProvider['mergingProduct_2']]);
         $productMockObject->verifyInvokedMultipleTimes('findAll', 0, [$mainProduct, $this->dataProvider['mergingProduct_1'], $this->dataProvider['mergingProduct_2']]);
     }
+    
+    /**
+     * Test success do product mapping from console in ProductMergingHelper::executeSystemCommand().
+     * @throws \Exception
+     * @see ProductMergingExecutor::executeSystemCommand()
+     */
+    public function testExecuteSystemCommandFromConsoleSuccess()
+    {
+        $faker = Factory::create();
+        $mainProduct = (int)$faker->buildingNumber;
+        $mergingProducts = [1 => (int)$faker->buildingNumber];
+
+        $productMergingExecutor = $productMergingExecutor = $this->getMockBuilder(ProductMergingExecutor::class)
+            ->setConstructorArgs([$mainProduct, $mergingProducts])
+            ->setMethods([
+                'checkConsoleRequest',
+                'getHomePerlDirectory'
+            ])->getMock();
+
+        $productMergingExecutor->expects($this->exactly(2))->method('checkConsoleRequest')->willReturn(true);
+        $productMergingExecutor->expects($this->once())->method('getHomePerlDirectory')->willReturn(static::PERL_HOME_DIRECTORY);
+
+        $stdoutMessage = "Merging from product $mergingProducts[1] to product $mainProduct: ";
+
+        $consoleMockObject = Test::double(Console::class, [
+            'stdout' => mb_strlen($stdoutMessage, '8bit'),
+            'output' => 1,
+        ]);
+        $result = $productMergingExecutor->doProductMerging();
+        $this->assertNull($result);
+        $consoleMockObject->verifyInvoked('stdout', $stdoutMessage);
+        $consoleMockObject->verifyInvoked('output');
+    }
+
