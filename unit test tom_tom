@@ -1,0 +1,712 @@
+class RemoveHistoryTest extends CodeceptionTest
+{
+    protected const SUPPLIER_ID_TOM_TOM = 1;
+    protected const USER_ID_TOM_TOM = 1;
+    protected const SELECT_LIMIT = 1000;
+
+    protected const TABLE_NAME_PRODUCT = 'product';
+    protected const TABLE_NAME_PRODUCT_BULLET = 'bullet';
+    protected const TABLE_NAME_PRODUCT_DESCRIPTION = 'description';
+    protected const TABLE_NAME_PRODUCT_EAN_CODES = 'ean_code';
+    protected const TABLE_NAME_PRODUCT_FEATURE = 'feature';
+    protected const TABLE_NAME_PRODUCT_FEATURE_LOCAL = 'feature_local';
+    protected const TABLE_NAME_PRODUCT_MULTIMEDIA_OBJECT = 'multimedia_object';
+    protected const TABLE_NAME_PRODUCT_NAME = 'name';
+    protected const TABLE_NAME_PRODUCT_PERSONALIZED_ACCESS = 'personalized_access';
+    protected const TABLE_NAME_PRODUCT_VARIANTS = 'variant';
+    protected const TABLE_NAME_PRODUCT_VARIANT_FEATURES = 'variant_feature';
+    protected const TABLE_NAME_PRODUCT_VIRTUAL_CATEGORY = 'virtual_category';
+
+    /**
+     * @inheritdoc
+     */
+    protected function _before()
+    {
+        parent::_before();
+        Test::clean();
+    }
+
+    /**
+     * Test success get user ID by required supplier ID.
+     *
+     * @see RemoveHistory::getUserIdBySupplier()
+     */
+    public function testGetUserIdBySupplierSuccess(): void
+    {
+        $period = '3 month';
+
+        $removeHistory = new RemoveHistory(static::SUPPLIER_ID_TOM_TOM, $period);
+        $this->assertEquals(static::USER_ID_TOM_TOM, $removeHistory->getUserId());
+    }
+
+    /**
+     * Test fail throw exception get user ID by required supplier ID.
+     *
+     * @see RemoveHistory::getUserIdBySupplier()
+     */
+    public function testGetUserIdBySupplierThrowExceptionFail(): void
+    {
+        $supplierId = 1;
+        $period = '3 month';
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage("You can not delete history for brand $supplierId");
+
+        $removeHistory = new RemoveHistory($supplierId, $period);
+        $removeHistory->execute();
+    }
+
+    /**
+     * Test success validated required period.
+     *
+     * @param string $period
+     *
+     * @dataProvider dataProviderForValidatePeriodSuccess
+     * @see          RemoveHistory::validationPeriod()
+     */
+    public function testValidatePeriodSuccess(string $period): void
+    {
+        $removeHistory = new RemoveHistory(static::SUPPLIER_ID_TOM_TOM, $period);
+        $this->assertEquals($period, $removeHistory->getPeriod());
+    }
+
+    /**
+     * Data provider for testValidatePeriodSuccess()
+     *
+     * @return array
+     */
+    public function dataProviderForValidatePeriodSuccess(): array
+    {
+        return [
+            'select number day' => ['3 day'],
+            'select number month' => ['3 month'],
+            'select number year' => ['3 year'],
+        ];
+    }
+
+    /**
+     * Test fail throw exception validate required period.
+     *
+     * @param int|string $period
+     *
+     * @see          RemoveHistory::validationPeriod()
+     * @dataProvider dataProviderForValidatePeriodFail
+     */
+    public function testValidatePeriodThrowExceptionFail($period): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Your selected period is not correct.');
+
+        $removeHistory = $this->getMockBuilder(RemoveHistory::class)
+            ->setConstructorArgs([static::SUPPLIER_ID_TOM_TOM, $period])
+            ->getMock();
+        $removeHistory->expects($this->never())->method('getUserIdBySupplier');
+        $removeHistory->execute();
+    }
+
+    /**
+     * Data provider for testValidatePeriodThrowExceptionFail()
+     *
+     * @return array
+     */
+    public function dataProviderForValidatePeriodFail(): array
+    {
+        return [
+            'select only number as int' => [3],
+            'select only number as string' => ['3'],
+            'select number with any word' => ['3 bla-bla'],
+            'select any word and number' => ['bla 3'],
+            'select correct word day or month or year and number' => ['month 3'],
+            'select number and plural correct word as days or months or years' => ['3 days'],
+        ];
+    }
+
+    /**
+     * Test success get supplier ID for requested supplier ID in constructor.
+     *
+     * @see RemoveHistory::getSupplierId()
+     */
+    public function testGetSupplierIdSuccess(): void
+    {
+        $period = '3 month';
+        $removeHistory = new RemoveHistory(static::SUPPLIER_ID_TOM_TOM, $period);
+        $this->assertEquals(static::SUPPLIER_ID_TOM_TOM, $removeHistory->getSupplierId());
+    }
+
+    /**
+     * Test success init min max IDs in editor journal.
+     *
+     * @see RemoveHistory::initMinMaxEditorJournalId()
+     */
+    public function testInitMinMaxEditorJournalIdSuccess(): void
+    {
+        $period = '3 month';
+        $dataMinMaxIds = ['min' => 1, 'max' => 10];
+
+        $editorJournalQueries = Test::double(EditorJournalQueries::class, [
+            'getMinMaxIdBySupplierIdUserIdPeriod' => $dataMinMaxIds,
+            'getHistoryBySupplierIdUserId' => [],
+        ]);
+        $console = Test::double(Console::class, ['output' => 'some message']);
+
+        $removeHistory = $this->getMockBuilder(RemoveHistory::class)
+            ->setConstructorArgs([static::SUPPLIER_ID_TOM_TOM, $period])
+            ->onlyMethods(['deleteEditorJournalHistory'])
+            ->getMock();
+        $removeHistory->execute();
+
+        $this->assertEquals($dataMinMaxIds['min'] + static::SELECT_LIMIT, $removeHistory->getMinEditorJournalId());
+        $this->assertEquals($dataMinMaxIds['max'], $removeHistory->getMaxEditorJournalId());
+
+        $editorJournalQueries->verifyInvokedOnce('getMinMaxIdBySupplierIdUserIdPeriod', [
+            static::SUPPLIER_ID_TOM_TOM,
+            static::USER_ID_TOM_TOM,
+            $period,
+        ]);
+        $editorJournalQueries->verifyInvokedMultipleTimes('getHistoryBySupplierIdUserId', 1, [
+            static::SUPPLIER_ID_TOM_TOM,
+            static::USER_ID_TOM_TOM,
+            $period,
+            $dataMinMaxIds['min'],
+            $dataMinMaxIds['min'] + static::SELECT_LIMIT - 1,
+        ]);
+        $console->verifyInvokedOnce('output', ['Process start.']);
+        $console->verifyInvokedOnce('output', ['Process end.']);
+        $removeHistory->expects($this->never())->method('deleteEditorJournalHistory');
+    }
+
+    /**
+     * Test success init min max IDs that are null in editor journal.
+     *
+     * @param array|null $dataMinMaxIds
+     *
+     * @throws \Exception
+     * @see          RemoveHistory::initMinMaxEditorJournalId()
+     * @dataProvider dataProviderForInitMinMaxEmptyEditorJournalId
+     */
+    public function testInitMinMaxEmptyEditorJournalIdSuccess(...$dataMinMaxIds): void
+    {
+        $period = '3 month';
+
+        $editorJournalQueries = Test::double(EditorJournalQueries::class, [
+            'getMinMaxIdBySupplierIdUserIdPeriod' => $dataMinMaxIds,
+        ]);
+        $console = Test::double(Console::class, ['output' => 'some message']);
+
+        $removeHistory = $this->getMockBuilder(RemoveHistory::class)
+            ->setConstructorArgs([static::SUPPLIER_ID_TOM_TOM, $period])
+            ->onlyMethods(['logInfo'])
+            ->getMock();
+        $removeHistory->expects($this->exactly(1))->method('logInfo')
+            ->with('Nothing to delete from history for supplier ' . static::SUPPLIER_ID_TOM_TOM . " except last period $period.");
+
+        $removeHistory->execute();
+
+        $this->assertEquals(0, $removeHistory->getMinEditorJournalId());
+        $this->assertEquals(0, $removeHistory->getMaxEditorJournalId());
+
+        $editorJournalQueries->verifyInvokedOnce('getMinMaxIdBySupplierIdUserIdPeriod', [
+            static::SUPPLIER_ID_TOM_TOM,
+            static::USER_ID_TOM_TOM,
+            $period,
+        ]);
+        $console->verifyInvokedOnce('output', ['Process start.']);
+        $console->verifyInvokedOnce('output', ['Nothing to delete from history for supplier ' . static::SUPPLIER_ID_TOM_TOM . " except last period $period."]);
+        $console->verifyInvokedOnce('output', ['Process end.']);
+    }
+
+    /**
+     * Data provider for testInitMinMaxEmptyEditorJournalIdSuccess()
+     *
+     * @return array
+     */
+    public function dataProviderForInitMinMaxEmptyEditorJournalId(): array
+    {
+        return [
+            'data from editor journal is null' => [null],
+            'value min max from editor journal are null' => [['min' => null, 'max' => null]],
+        ];
+    }
+
+    /**
+     * Test success execute script.
+     *
+     * @param array $dataMinMaxIds
+     * @param array $dataGetHistory
+     * @param array $productTables
+     * @param array $editorJournalIds
+     * @param int $countHistorySearch
+     * @param int $countDeleteCall
+     *
+     * @throws \Exception
+     * @see          RemoveHistory::execute()
+     * @dataProvider dataProviderForExecuteSuccess
+     */
+    public function testExecuteSuccess(array $dataMinMaxIds, array $dataGetHistory, array $productTables, array $editorJournalIds, int $countHistorySearch, int $countDeleteCall): void
+    {
+        $period = '3 month';
+        $inputParamsForGetHistoryFromEditorJournal = $this->prepareInputParamsForGetHistory($countHistorySearch, $dataMinMaxIds['min']);
+        $inputParamsForDeleteHistory = $this->prepareInputParamsForDeleteEditorJournalHistory($productTables, $editorJournalIds);
+
+        $editorJournalQueries = Test::double(EditorJournalQueries::class, [
+            'getMinMaxIdBySupplierIdUserIdPeriod' => $dataMinMaxIds,
+        ]);
+
+        $console = Test::double(Console::class, ['output' => 'some message']);
+
+        $removeHistory = $this->getMockBuilder(RemoveHistory::class)
+            ->setConstructorArgs([static::SUPPLIER_ID_TOM_TOM, $period])
+            ->onlyMethods([
+                'getHistoryFromEditorJournal',
+                'deleteEditorJournalHistory',
+            ])->getMock();
+        $removeHistory->expects($this->exactly($countHistorySearch))->method('getHistoryFromEditorJournal')
+            ->withConsecutive(...$inputParamsForGetHistoryFromEditorJournal)
+            ->willReturnOnConsecutiveCalls(...$dataGetHistory);
+        $removeHistory->expects($this->exactly($countDeleteCall))->method('deleteEditorJournalHistory')
+            ->withConsecutive(...$inputParamsForDeleteHistory);
+
+        $removeHistory->execute();
+
+        $editorJournalQueries->verifyInvokedOnce('getMinMaxIdBySupplierIdUserIdPeriod', [
+            static::SUPPLIER_ID_TOM_TOM,
+            static::USER_ID_TOM_TOM,
+            $period,
+        ]);
+
+        $console->verifyInvokedMultipleTimes('output', 2);
+        $console->verifyInvokedOnce('output', ['Process start.']);
+        $console->verifyInvokedOnce('output', ['Process end.']);
+    }
+
+    /**
+     * Data provider for testExecuteSuccess().
+     *
+     * @return array
+     */
+    public function dataProviderForExecuteSuccess(): array
+    {
+        return [
+            'get history once and delete data once' => [
+                ['min' => 1, 'max' => 10], //data for min max Ids
+                [
+                    [[
+                        'id' => 1,
+                        'product_table' => 'product',
+                        'content_id' => 2,
+                    ],
+                        [
+                            'id' => 5,
+                            'product_table' => 'product_name',
+                            'content_id' => 2,
+                        ],
+                        [
+                            'id' => 10,
+                            'product_table' => 'product_description',
+                            'content_id' => 3,
+                        ]],
+                ], // data from editor journal
+                [
+                    ['product' => [
+                        0 => [
+                            'id' => 1,
+                            'product_table' => 'product',
+                            'content_id' => 2,
+                        ],
+                    ],
+                        'product_name' => [
+                            0 => [
+                                'id' => 5,
+                                'product_table' => 'product_name',
+                                'content_id' => 2,
+                            ],
+                        ],
+                        'product_description' => [
+                            0 => [
+                                'id' => 10,
+                                'product_table' => 'product_description',
+                                'content_id' => 3,
+                            ],
+                        ]],
+                ], //product tables grouped data
+                [[1, 5, 10]], //editor journal ids for delete
+                1, //count history search in cycle
+                1, //count calling delete function
+            ],
+            'get history twice and delete data twice' => [
+                ['min' => 1, 'max' => 1500], //data for min max Ids
+                [
+                    [[
+                        'id' => 1,
+                        'product_table' => 'product',
+                        'content_id' => 2,
+                    ]],
+                    [[
+                        'id' => 1500,
+                        'product_table' => 'product',
+                        'content_id' => 2000,
+                    ]],
+                ], // data from editor journal
+                [
+                    ['product' => [
+                        0 => [
+                            'id' => 1,
+                            'product_table' => 'product',
+                            'content_id' => 2,
+                        ],
+                    ]],
+                    ['product' => [
+                        0 => [
+                            'id' => 1500,
+                            'product_table' => 'product',
+                            'content_id' => 2000,
+                        ],
+                    ]],
+                ], //product tables grouped data
+                [[1], [1500]], //editor journal ids for delete
+                2, //count history search in cycle
+                2, //count calling delete function
+            ],
+            'get history 3 times, but delete data only 2 times' => [
+                ['min' => 1, 'max' => 3000], //data for min max Ids
+                [
+                    [[
+                        'id' => 1,
+                        'product_table' => 'product',
+                        'content_id' => 2,
+                    ]],
+                    [],
+                    [[
+                        'id' => 2500,
+                        'product_table' => 'product',
+                        'content_id' => 2000,
+                    ]],
+                ], // data from editor journal
+                [
+                    ['product' => [
+                        0 => [
+                            'id' => 1,
+                            'product_table' => 'product',
+                            'content_id' => 2,
+                        ],
+                    ]],
+                    ['product' => [
+                        0 => [
+                            'id' => 2500,
+                            'product_table' => 'product',
+                            'content_id' => 2000,
+                        ],
+                    ]],
+                ], //product tables grouped data
+                [[1], [2500]], //editor journal ids for delete
+                3, //count history search in cycle
+                2, //count calling delete function
+            ],
+        ];
+    }
+
+    /**
+     * Test success delete history in editor journal.
+     *
+     * @throws \Exception
+     * @see RemoveHistory::deleteEditorJournalHistory()
+     */
+    public function testDeleteEditorJournalHistorySuccess(): void
+    {
+        $period = '3 month';
+        $dataMinMaxIds = ['min' => 1, 'max' => 10];
+        $dataGetHistory = [
+            [
+                'id' => 1,
+                'product_table' => 'product',
+                'content_id' => 2,
+            ],
+            [
+                'id' => 5,
+                'product_table' => 'product_name',
+                'content_id' => 2,
+            ],
+            [
+                'id' => 10,
+                'product_table' => 'product_description',
+                'content_id' => 3,
+            ],
+        ];
+        $editorJournalIds = [1, 5, 10];
+
+        $editorJournalQueries = Test::double(EditorJournalQueries::class, [
+            'getMinMaxIdBySupplierIdUserIdPeriod' => $dataMinMaxIds,
+            'getHistoryBySupplierIdUserId' => $dataGetHistory,
+        ]);
+        $editorJournal = Test::double(EditorJournal::class, ['deleteAll' => 3]);
+        $console = Test::double(Console::class, ['output' => 'some message']);
+
+        $removeHistory = $this->getMockBuilder(RemoveHistory::class)
+            ->setConstructorArgs([static::SUPPLIER_ID_TOM_TOM, $period])
+            ->onlyMethods(['deleteProductTableHistory'])
+            ->getMock();
+        $removeHistory->expects($this->exactly(3))->method('deleteProductTableHistory')
+            ->withConsecutive(...[
+                ['product'], ['product_name'], ['product_description'],
+            ]);
+
+        $removeHistory->execute();
+
+        $editorJournal->verifyInvokedOnce('deleteAll', [['id' => $editorJournalIds]]);
+        $editorJournalQueries->verifyInvokedOnce('getMinMaxIdBySupplierIdUserIdPeriod', [
+            static::SUPPLIER_ID_TOM_TOM,
+            static::USER_ID_TOM_TOM,
+            $period,
+        ]);
+        $editorJournalQueries->verifyInvokedMultipleTimes('getHistoryBySupplierIdUserId', 1, [
+            static::SUPPLIER_ID_TOM_TOM,
+            static::USER_ID_TOM_TOM,
+            $period,
+            $dataMinMaxIds['min'],
+            $dataMinMaxIds['min'] + static::SELECT_LIMIT - 1,
+        ]);
+        $console->verifyInvokedMultipleTimes('output', 3);
+        $console->verifyInvokedOnce('output', ['Process start.']);
+        $console->verifyInvokedOnce('output', ['Deleted 3 rows in editor_journal for next ids: ' . implode(', ', $editorJournalIds) . '.']);
+        $console->verifyInvokedOnce('output', ['Process end.']);
+    }
+
+    /**
+     * Test success delete product table in editor journal.
+     *
+     * @throws \Exception
+     * @see RemoveHistory::deleteProductTableHistory()
+     */
+    public function testDeleteProductTableHistorySuccess(): void
+    {
+        $period = '3 month';
+        $dataMinMaxIds = ['min' => 1, 'max' => 10];
+        $dataGetHistory = [
+            [
+                'id' => 1,
+                'product_table' => 'product',
+                'content_id' => 2,
+            ],
+            [
+                'id' => 5,
+                'product_table' => 'product_name',
+                'content_id' => 2,
+            ],
+            [
+                'id' => 10,
+                'product_table' => 'product_description',
+                'content_id' => 3,
+            ],
+        ];
+
+        $editorJournalIds = [1, 5, 10];
+        $productHistoryIds = [2];
+        $productNameHistoryIds = [2];
+        $productDescriptionHistoryIds = [3];
+
+        $editorJournalQueries = Test::double(EditorJournalQueries::class, [
+            'getMinMaxIdBySupplierIdUserIdPeriod' => $dataMinMaxIds,
+            'getHistoryBySupplierIdUserId' => $dataGetHistory,
+        ]);
+        $editorJournal = Test::double(EditorJournal::class, ['deleteAll' => 3]);
+        $console = Test::double(Console::class, ['output' => 'some message']);
+        $this->getMockAllTableName();
+
+        $productHistory = $this->getMockCurrentProductTable('product', 1);
+        $productNameHistory = $this->getMockCurrentProductTable('product_name', 1);
+        $productDescriptionHistory = $this->getMockCurrentProductTable('product_description', 1);
+
+        $removeHistory = $this->getMockBuilder(RemoveHistory::class)
+            ->setConstructorArgs([static::SUPPLIER_ID_TOM_TOM, $period])
+            ->onlyMethods([
+                'getLogTags',
+            ])
+            ->getMock();
+
+        $removeHistory->execute();
+
+        $editorJournal->verifyInvokedOnce('deleteAll', [['id' => $editorJournalIds]]);
+        $editorJournalQueries->verifyInvokedOnce('getMinMaxIdBySupplierIdUserIdPeriod', [
+            static::SUPPLIER_ID_TOM_TOM,
+            static::USER_ID_TOM_TOM,
+            $period,
+        ]);
+        $editorJournalQueries->verifyInvokedMultipleTimes('getHistoryBySupplierIdUserId', 1, [
+            static::SUPPLIER_ID_TOM_TOM,
+            static::USER_ID_TOM_TOM,
+            $period,
+            $dataMinMaxIds['min'],
+            $dataMinMaxIds['min'] + static::SELECT_LIMIT - 1,
+        ]);
+
+        $productHistory->verifyInvokedMultipleTimes('deleteAll', 1, [['content_id' => $productHistoryIds]]);
+        $productNameHistory->verifyInvokedMultipleTimes('deleteAll', 1, [['content_id' => $productNameHistoryIds]]);
+        $productDescriptionHistory->verifyInvokedMultipleTimes('deleteAll', 1, [['content_id' => $productDescriptionHistoryIds]]);
+
+        $console->verifyInvokedMultipleTimes('output', 6);
+        $console->verifyInvokedOnce('output', ['Process start.']);
+        $console->verifyInvokedOnce('output', ['Deleted 1 rows in history table product for next ids: ' . implode(', ', $productHistoryIds) . '.']);
+        $console->verifyInvokedOnce('output', ['Deleted 1 rows in history table product_name for next ids: ' . implode(', ', $productNameHistoryIds) . '.']);
+        $console->verifyInvokedOnce('output', ['Deleted 1 rows in history table product_description for next ids: ' . implode(', ', $productDescriptionHistoryIds) . '.']);
+        $console->verifyInvokedOnce('output', ['Deleted 3 rows in editor_journal for next ids: ' . implode(', ', $editorJournalIds) . '.']);
+        $console->verifyInvokedOnce('output', ['Process end.']);
+    }
+
+    /**
+     * Test fail delete unexisted product history table.
+     *
+     * @throws \Exception
+     * @see RemoveHistory::deleteProductTableHistory()
+     */
+    public function testDeleteProductTableHistoryThrowExceptionFail()
+    {
+        $period = '3 month';
+        $dataMinMaxIds = ['min' => 1, 'max' => 10];
+        $dataGetHistory = [
+            [
+                'id' => 1,
+                'product_table' => 'some_table',
+                'content_id' => 2,
+            ],
+            [
+                'id' => 5,
+                'product_table' => 'product_name',
+                'content_id' => 2,
+            ],
+            [
+                'id' => 10,
+                'product_table' => 'product_description',
+                'content_id' => 3,
+            ],
+        ];
+
+        $editorJournalQueries = Test::double(EditorJournalQueries::class, [
+            'getMinMaxIdBySupplierIdUserIdPeriod' => $dataMinMaxIds,
+        ]);
+        $console = Test::double(Console::class, ['output' => 'some message']);
+        $this->getMockAllTableName();
+
+        $removeHistory = $this->getMockBuilder(RemoveHistory::class)
+            ->setConstructorArgs([static::SUPPLIER_ID_TOM_TOM, $period])
+            ->onlyMethods([
+                'getHistoryFromEditorJournal',
+            ])
+            ->getMock();
+        $removeHistory->expects($this->exactly(1))->method('getHistoryFromEditorJournal')
+            ->with($dataMinMaxIds['min'], $dataMinMaxIds['min'] + static::SELECT_LIMIT - 1)
+            ->willReturn($dataGetHistory);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Unknown product table - some_table.');
+
+        $removeHistory->execute();
+
+        $editorJournalQueries->verifyInvokedOnce('getMinMaxIdBySupplierIdUserIdPeriod', [
+            static::SUPPLIER_ID_TOM_TOM,
+            static::USER_ID_TOM_TOM,
+            $period,
+        ]);
+        $console->verifyInvokedMultipleTimes('output', 1);
+    }
+
+    /**
+     * Prepare input params for get history from editor journal.
+     *
+     * @param int $countSearchHistory
+     * @param int $minId
+     *
+     * @return array
+     */
+    protected function prepareInputParamsForGetHistory(int $countSearchHistory, int $minId): array
+    {
+        $inputParamsForGetHistoryFromEditorJournal = [];
+
+        for ($i = 1; $i <= $countSearchHistory; $i++) {
+            $inputParamsForGetHistoryFromEditorJournal[] = [$minId, $minId + static::SELECT_LIMIT - 1];
+            $minId += static::SELECT_LIMIT;
+        }
+
+        return $inputParamsForGetHistoryFromEditorJournal;
+    }
+
+    /**
+     * Prepare input params for delete history in editor journal.
+     *
+     * @param array $productTables
+     * @param array $editorJournalIds
+     *
+     * @return array
+     */
+    protected function prepareInputParamsForDeleteEditorJournalHistory(array $productTables, array $editorJournalIds): array
+    {
+        $inputParamsForDeleteHistory = [];
+
+        foreach ($productTables as $key => $item) {
+            $inputParamsForDeleteHistory[$key] = [$item, $editorJournalIds[$key]];
+        }
+
+        return $inputParamsForDeleteHistory;
+    }
+
+    /**
+     * Get current product table mock.
+     *
+     * @param string $productTable
+     * @param int $delRows
+     *
+     * @return \AspectMock\Proxy\ClassProxy|\AspectMock\Proxy\InstanceProxy|\AspectMock\Proxy\Verifier|void
+     * @throws \Exception
+     */
+    protected function getMockCurrentProductTable(string $productTable, $delRows)
+    {
+        switch ($productTable) {
+            case static::TABLE_NAME_PRODUCT:
+                return Test::double(EditorJournalProduct::class, ['deleteAll' => $delRows]);
+            case static::TABLE_NAME_PRODUCT_BULLET:
+                return Test::double(EditorJournalProductBullet::class, ['deleteAll' => $delRows]);
+            case static::TABLE_NAME_PRODUCT_DESCRIPTION:
+                return Test::double(EditorJournalProductDescription::class, ['deleteAll' => $delRows]);
+            case static::TABLE_NAME_PRODUCT_EAN_CODES:
+                return Test::double(EditorJournalProductEanCodes::class, ['deleteAll' => $delRows]);
+            case static::TABLE_NAME_PRODUCT_FEATURE:
+                return Test::double(EditorJournalProductFeaturePack::class, ['deleteAll' => $delRows]);
+            case static::TABLE_NAME_PRODUCT_FEATURE_LOCAL:
+                return Test::double(EditorJournalProductFeatureLocalPack::class, ['deleteAll' => $delRows]);
+            case static::TABLE_NAME_PRODUCT_MULTIMEDIA_OBJECT:
+                return Test::double(EditorJournalProductMultimediaObject::class, ['deleteAll' => $delRows]);
+            case static::TABLE_NAME_PRODUCT_NAME:
+                return Test::double(EditorJournalProductName::class, ['deleteAll' => $delRows]);
+            case static::TABLE_NAME_PRODUCT_PERSONALIZED_ACCESS:
+                return Test::double(EditorJournalProductPersonalizedAccess::class, ['deleteAll' => $delRows]);
+            case static::TABLE_NAME_PRODUCT_VARIANTS:
+                return Test::double(EditorJournalVariants::class, ['deleteAll' => $delRows]);
+            case static::TABLE_NAME_PRODUCT_VARIANT_FEATURES:
+                return Test::double(EditorJournalVariantFeatures::class, ['deleteAll' => $delRows]);
+            case static::TABLE_NAME_PRODUCT_VIRTUAL_CATEGORY:
+                return Test::double(EditorJournalVirtualCategoryProduct::class, ['deleteAll' => $delRows]);
+            default:
+                return;
+        }
+    }
+
+    /**
+     * Get mock for all table name in history.
+     *
+     * @throws \Exception
+     */
+    protected function getMockAllTableName(): void
+    {
+        Test::double(Product::class, ['tableName' => static::TABLE_NAME_PRODUCT]);
+        Test::double(ProductBullet::class, ['tableName' => static::TABLE_NAME_PRODUCT_BULLET]);
+        Test::double(ProductDescription::class, ['tableName' => static::TABLE_NAME_PRODUCT_DESCRIPTION]);
+        Test::double(ProductEanCodes::class, ['tableName' => static::TABLE_NAME_PRODUCT_EAN_CODES]);
+        Test::double(ProductFeature::class, ['tableName' => static::TABLE_NAME_PRODUCT_FEATURE]);
+        Test::double(ProductFeatureLocal::class, ['tableName' => static::TABLE_NAME_PRODUCT_FEATURE_LOCAL]);
+        Test::double(ProductMultimediaObject::class, ['tableName' => static::TABLE_NAME_PRODUCT_MULTIMEDIA_OBJECT]);
+        Test::double(ProductName::class, ['tableName' => static::TABLE_NAME_PRODUCT_NAME]);
+        Test::double(ProductPersonalizedAccess::class, ['type' => static::TABLE_NAME_PRODUCT_PERSONALIZED_ACCESS]);
+        Test::double(Variant::class, ['tableName' => static::TABLE_NAME_PRODUCT_VARIANTS]);
+        Test::double(VariantFeature::class, ['tableName' => static::TABLE_NAME_PRODUCT_VARIANT_FEATURES]);
+        Test::double(VirtualCategory::class, ['tableName' => static::TABLE_NAME_PRODUCT_VIRTUAL_CATEGORY]);
+    }
+}
