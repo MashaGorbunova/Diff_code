@@ -1,0 +1,683 @@
+<?php
+
+declare(strict_types = 1);
+
+namespace app\tests\unit\models\cache\product\productinfo;
+
+use app\models\cache\product\productinfo\ProductLatestOwnerHelper;
+use app\models\EditorJournalQueries;
+use app\models\Product;
+use app\models\ProductLatestOwner;
+use app\models\ProductLatestOwnerQueries;
+use app\models\ProductQueries;
+use app\tests\unit\models\cache\product\productinfo\faker\FakeProductLatestOwner;
+use app\tests\unit\models\cache\product\productinfo\faker\FakeProductLatestOwnerQueries;
+use yii\db\Connection;
+use yii\db\Exception;
+use yii\db\Expression;
+use AspectMock\Test;
+use Codeception\Test\Unit as Codeception;
+use yii\db\Transaction;
+
+/**
+ * Class ProductLatestOwnerHelperTest
+ */
+class ProductLatestOwnerHelperTest extends Codeception
+{
+    protected const PRODUCT_ID = 1007;
+    protected const USER_ID = 333;
+    protected const DAYS_PASSED_BEFORE_UPDATE = 738009;
+    protected const UPDATED_AT = '2020-08-07 10:12:57';
+
+    protected const DAY_VALUE_IN_PRODUCT_LATEST_OWNER_MODEL = 100;
+
+    /**
+     * @inheritdoc
+     */
+    protected function _before(): void
+    {
+        Test::clean();
+        parent::_before();
+    }
+
+    /**
+     * Test success update latest owner.
+     *
+     * @see ProductLatestOwnerHelper::update()
+     * @see ProductLatestOwnerHelper::save()
+     * @throws \Exception
+     */
+    public function testUpdateLatestOwnerSuccess(): void
+    {
+        $rawData = $this->getDefaultRawData();
+        $prepareData = $this->getDefaultPrepareData();
+        $modelsForSaving = $this->getDefaultModelsForSavingData();
+
+        $productMock = $this->productMock(true);
+        $productLatestOwnerHelperMock = Test::double(ProductLatestOwnerHelper::class, [
+            'getRawData' => $rawData,
+            'prepareData' => $prepareData,
+            'prepareModelsForSaving' => $modelsForSaving,
+            'getDbConnection' => $this->dbMockSuccessTransaction(),
+        ]);
+
+        ProductLatestOwnerHelper::update(static::PRODUCT_ID);
+
+        $productMock->verifyInvokedOnce('isProductExists', [static::PRODUCT_ID]);
+        $productLatestOwnerHelperMock->verifyInvokedOnce('getRawData', [static::PRODUCT_ID]);
+        $productLatestOwnerHelperMock->verifyInvokedOnce('prepareData', [$rawData, static::PRODUCT_ID]);
+        $productLatestOwnerHelperMock->verifyInvokedOnce('prepareModelsForSaving', [$prepareData]);
+        $productLatestOwnerHelperMock->verifyInvokedOnce('getDbConnection');
+    }
+
+    /**
+     * Test success update latest owner when product does not exist.
+     *
+     * @see ProductLatestOwnerHelper::update()
+     * @throws \Exception
+     */
+    public function testUpdateLatestOwnerWhenProductNotExistsSuccess(): void
+    {
+        $productMock = $this->productMock(false);
+        $productLatestOwnerMock = Test::double(ProductLatestOwner::class, ['deleteAll' => 1]);
+
+        ProductLatestOwnerHelper::update(static::PRODUCT_ID);
+
+        $productMock->verifyInvokedOnce('isProductExists', [static::PRODUCT_ID]);
+        $productLatestOwnerMock->verifyInvokedOnce('deleteAll', [['product_id' => static::PRODUCT_ID]]);
+    }
+
+    /**
+     * Test success update latest owner if raw data is empty.
+     *
+     * @see ProductLatestOwnerHelper::update()
+     * @throws \Exception
+     */
+    public function testUpdateLatestOwnerRawDataEmptySuccess(): void
+    {
+        $productMock = $this->productMock(true);
+        $productLatestOwnerHelperMock = Test::double(ProductLatestOwnerHelper::class, ['getRawData' => []]);
+
+        ProductLatestOwnerHelper::update(static::PRODUCT_ID);
+
+        $productMock->verifyInvokedOnce('isProductExists', [static::PRODUCT_ID]);
+        $productLatestOwnerHelperMock->verifyInvokedOnce('getRawData', [static::PRODUCT_ID]);
+    }
+
+    /**
+     * Test success update latest owner if prepare data is empty.
+     *
+     * @see ProductLatestOwnerHelper::update()
+     * @throws \Exception
+     */
+    public function testUpdateLatestOwnerPrepareDataEmptySuccess(): void
+    {
+        $rawData = $this->getDefaultRawData();
+        $productMock = $this->productMock(true);
+        $productLatestOwnerHelperMock = Test::double(ProductLatestOwnerHelper::class, [
+            'getRawData' => $rawData,
+            'prepareData' => [],
+        ]);
+
+        ProductLatestOwnerHelper::update(static::PRODUCT_ID);
+
+        $productMock->verifyInvokedOnce('isProductExists', [static::PRODUCT_ID]);
+        $productLatestOwnerHelperMock->verifyInvokedOnce('prepareData', [$rawData, static::PRODUCT_ID]);
+    }
+
+    /**
+     * Test success update latest owner if prepare models for saving is empty.
+     *
+     * @see ProductLatestOwnerHelper::update()
+     * @throws \Exception
+     */
+    public function testUpdateLatestOwnerPrepareModelsForSavingEmptySuccess(): void
+    {
+        $rawData = $this->getDefaultRawData();
+        $prepareData = $this->getDefaultPrepareData();
+
+        $productMock = $this->productMock(true);
+        $productLatestOwnerHelperMock = Test::double(ProductLatestOwnerHelper::class, [
+            'getRawData' => $rawData,
+            'prepareData' => $prepareData,
+            'prepareModelsForSaving' => [],
+        ]);
+
+        ProductLatestOwnerHelper::update(static::PRODUCT_ID);
+
+        $productMock->verifyInvokedOnce('isProductExists', [static::PRODUCT_ID]);
+        $productLatestOwnerHelperMock->verifyInvokedOnce('prepareModelsForSaving', [$prepareData]);
+    }
+
+    /**
+     * Test success get raw data from editor journal.
+     *
+     * @see ProductLatestOwnerHelper::getRawData()
+     * @throws \Exception
+     */
+    public function testGetRawDataFromEditorJournalSuccess(): void
+    {
+        $editorJournalQueriesMock = $this->editorJournalQueriesMock($this->getDefaultRawData());
+
+        $actualResult = ProductLatestOwnerHelper::getRawData(static::PRODUCT_ID);
+        static::assertSame($this->getDefaultRawData(), $actualResult);
+
+        $editorJournalQueriesMock->verifyInvokedOnce('getLastOwnersByEditorJournal', [static::PRODUCT_ID]);
+    }
+
+    /**
+     * Test success get raw data with empty editor journal data.
+     *
+     * @see          ProductLatestOwnerHelper::getRawData()
+     * @dataProvider dataProviderForTestGetRawData
+     *
+     * @param null|array $productData
+     * @param array $expectedResult
+     *
+     * @throws \Exception
+     */
+    public function testGetRawDataWithEmptyEditorJournalSuccess(?array $productData, array $expectedResult): void
+    {
+        $editorJournalQueriesMock = $this->editorJournalQueriesMock([]);
+        $productQueriesMock = Test::double(ProductQueries::class, ['getInfoByLastUpdateUser' => $productData]);
+
+        $actualResult = ProductLatestOwnerHelper::getRawData(static::PRODUCT_ID);
+        static::assertSame($expectedResult, $actualResult);
+
+        $editorJournalQueriesMock->verifyInvokedOnce('getLastOwnersByEditorJournal', [static::PRODUCT_ID]);
+        $productQueriesMock->verifyInvokedOnce('getInfoByLastUpdateUser', [static::PRODUCT_ID]);
+    }
+
+    /**
+     * Data provider for testGetRawDataWithEmptyEditorJournal.
+     *
+     * @return array
+     */
+    public function dataProviderForTestGetRawData(): array
+    {
+        return [
+            'get raw data from product table' => [
+                [
+                    'user_id' => static::USER_ID,
+                    'date' => static::UPDATED_AT,
+                    'day' => static::DAYS_PASSED_BEFORE_UPDATE,
+                ], //product data
+                $this->getDefaultRawData(), //expected result
+            ],
+            'get empty raw data' => [
+                null, //product data
+                [], //expected result
+            ],
+        ];
+    }
+
+    /**
+     * Test success prepare data.
+     *
+     * @see          ProductLatestOwnerHelper::prepareData()
+     * @dataProvider dataProviderForTestPrepareData
+     *
+     * @param array $rawData
+     * @param array $expectedResult
+     *
+     * @throws \yii\base\InvalidConfigException
+     */
+    public function testPrepareDataSuccess(array $rawData, array $expectedResult): void
+    {
+        $expectedResult = $this->prepareDataWithExpressionMock($expectedResult);
+        $actualResult = ProductLatestOwnerHelper::prepareData($rawData, static::PRODUCT_ID);
+        static::assertEquals($expectedResult, $actualResult);
+    }
+
+    /**
+     * Data provider for testPrepareDataSuccess.
+     *
+     * @return array
+     */
+    public function dataProviderForTestPrepareData(): array
+    {
+        return [
+            'get data from editor journal when get 3 records from table, but owner changing was only 1 time' => [
+                [
+                    0 => [
+                        'user_id' => 83849,
+                        'date' => '2020-02-10 23:47:42',
+                        'day' => 737830,
+                    ],
+                    1 => [
+                        'user_id' => 83849,
+                        'date' => '2020-02-11 23:47:42',
+                        'day' => 737831,
+                    ],
+                    2 => [
+                        'user_id' => 8384,
+                        'date' => '2020-02-12 23:47:43',
+                        'day' => 737832,
+                    ],
+                ], // data from editor journal
+                [
+                    83849 => [
+                        'product_id' => static::PRODUCT_ID,
+                        'user_id' => 83849,
+                        'updated' => '2020-02-10 23:47:42',
+                        'date' => "UNIX_TIMESTAMP('2020-02-10 23:47:42')",
+                        'day' => 737830,
+                    ],
+                    8384 => [
+                        'product_id' => static::PRODUCT_ID,
+                        'user_id' => 8384,
+                        'updated' => '2020-02-12 23:47:43',
+                        'date' => "UNIX_TIMESTAMP('2020-02-12 23:47:43')",
+                        'day' => 737832,
+                    ],
+                ], // expected result
+            ],
+            'get data from editor journal when get 3 records from table, but owner changing was 2 times' => [
+                [
+                    0 => [
+                        'user_id' => 83849,
+                        'date' => '2020-02-10 23:47:42',
+                        'day' => 737830,
+                    ],
+                    1 => [
+                        'user_id' => 8384,
+                        'date' => '2020-02-12 23:47:43',
+                        'day' => 737832,
+                    ],
+                    2 => [
+                        'user_id' => 83849,
+                        'date' => '2020-02-14 23:47:42',
+                        'day' => 737833,
+                    ],
+                ], // data from editor journal
+                [
+                    83849 => [
+                        'product_id' => static::PRODUCT_ID,
+                        'user_id' => 83849,
+                        'updated' => '2020-02-14 23:47:42',
+                        'date' => "UNIX_TIMESTAMP('2020-02-14 23:47:42')",
+                        'day' => 737833,
+                    ],
+                    8384 => [
+                        'product_id' => static::PRODUCT_ID,
+                        'user_id' => 8384,
+                        'updated' => '2020-02-12 23:47:43',
+                        'date' => "UNIX_TIMESTAMP('2020-02-12 23:47:43')",
+                        'day' => 737832,
+                    ],
+                ], // expected result
+            ],
+            'get data from editor journal when get 2 records from table, with 2 owners' => [
+                [
+                    0 => [
+                        'user_id' => 125,
+                        'date' => '2020-02-10 23:57:42',
+                        'day' => 737830,
+                    ],
+                    1 => [
+                        'user_id' => 8384,
+                        'date' => '2020-02-14 23:47:42',
+                        'day' => 737833,
+                    ],
+                ], // data from editor journal
+                [
+                    125 => [
+                        'product_id' => static::PRODUCT_ID,
+                        'user_id' => 125,
+                        'updated' => '2020-02-10 23:57:42',
+                        'date' => "UNIX_TIMESTAMP('2020-02-10 23:57:42')",
+                        'day' => 737830,
+                    ],
+                    8384 => [
+                        'product_id' => static::PRODUCT_ID,
+                        'user_id' => 8384,
+                        'updated' => '2020-02-14 23:47:42',
+                        'date' => "UNIX_TIMESTAMP('2020-02-14 23:47:42')",
+                        'day' => 737833,
+                    ],
+                ], // expected result
+            ],
+        ];
+    }
+
+    /**
+     * Test success when prepare data is empty.
+     *
+     * @see ProductLatestOwnerHelper::prepareData()
+     *
+     * @throws \yii\base\InvalidConfigException
+     */
+    public function testPrepareDataEmptySuccess(): void
+    {
+        $rawData = [
+            0 => [
+                'user_id' => '0',
+                'date' => static::UPDATED_AT,
+                'day' => static::DAYS_PASSED_BEFORE_UPDATE,
+            ],
+        ];
+
+        $actualResult = ProductLatestOwnerHelper::prepareData($rawData, static::PRODUCT_ID);
+        static::assertSame([], $actualResult);
+    }
+
+    /**
+     * Test success for prepare models for saving
+     *
+     * @see          ProductLatestOwnerHelper::prepareModelsForSaving()
+     *
+     * @dataProvider dataProviderPrepareModelsForSavingSuccess
+     *
+     * @param array $prepareData
+     * @param array $rawDataModelsForSaving
+     *
+     * @throws \yii\base\InvalidConfigException
+     */
+    public function testPrepareModelsForSavingSuccess(array $prepareData, array $rawDataModelsForSaving): void
+    {
+        \Yii::$container->set(ProductLatestOwner::class, function () {
+            return new FakeProductLatestOwner();
+        });
+        $expectedResult = $this->prepareMockModelsForSaving($rawDataModelsForSaving);
+
+        Test::double(ProductLatestOwnerQueries::class, ['getProductLatestOwnerByProductAndUser' => function ($productId, $userId) {
+            return FakeProductLatestOwnerQueries::getProductLatestOwnerByProductAndUser($productId, $userId);
+        }]);
+
+        $actualResult = ProductLatestOwnerHelper::prepareModelsForSaving($prepareData);
+        self::assertEquals($expectedResult, $actualResult);
+    }
+
+    /**
+     * Data provider for testPrepareModelsForSavingSuccess
+     *
+     * @return array
+     */
+    public function dataProviderPrepareModelsForSavingSuccess(): array
+    {
+        return [
+            'product latest owner for user and product does not exist in DB' => [
+                [
+                    125 => [
+                        'product_id' => static::PRODUCT_ID,
+                        'user_id' => 125,
+                        'updated' => '2020-02-10 23:57:42',
+                        'date' => "UNIX_TIMESTAMP('2020-02-10 23:57:42')",
+                        'day' => 737830,
+                    ],
+                    8384 => [
+                        'product_id' => static::PRODUCT_ID,
+                        'user_id' => 8384,
+                        'updated' => '2020-02-14 23:47:42',
+                        'date' => "UNIX_TIMESTAMP('2020-02-14 23:47:42')",
+                        'day' => 737833,
+                    ],
+                ], //prepare data without Expression mock for date key
+                [
+                    125 => [
+                        'product_id' => static::PRODUCT_ID,
+                        'user_id' => 125,
+                        'updated' => '2020-02-10 23:57:42',
+                        'date' => "UNIX_TIMESTAMP('2020-02-10 23:57:42')",
+                        'day' => 737830,
+                    ],
+                    8384 => [
+                        'product_id' => static::PRODUCT_ID,
+                        'user_id' => 8384,
+                        'updated' => '2020-02-14 23:47:42',
+                        'date' => "UNIX_TIMESTAMP('2020-02-14 23:47:42')",
+                        'day' => 737833,
+                    ],
+                ], // raw data for models
+            ],
+            'product latest owner for user and product exists in DB and updated day is smaller than in prepare date' => [
+                [
+                    FakeProductLatestOwnerQueries::USER_ID_WITH_UPDATED_DAY_SMALLER_THAN_IN_PREPARE_DATE => [
+                        'product_id' => static::PRODUCT_ID,
+                        'user_id' => FakeProductLatestOwnerQueries::USER_ID_WITH_UPDATED_DAY_SMALLER_THAN_IN_PREPARE_DATE,
+                        'updated' => static::UPDATED_AT,
+                        'date' => "UNIX_TIMESTAMP('2020-08-07 10:12:57')",
+                        'day' => static::DAYS_PASSED_BEFORE_UPDATE,
+                    ],
+                ], //prepare data without Expression mock for date key
+                [
+                    FakeProductLatestOwnerQueries::USER_ID_WITH_UPDATED_DAY_SMALLER_THAN_IN_PREPARE_DATE => [
+                        'product_id' => static::PRODUCT_ID,
+                        'user_id' => FakeProductLatestOwnerQueries::USER_ID_WITH_UPDATED_DAY_SMALLER_THAN_IN_PREPARE_DATE,
+                        'updated' => static::UPDATED_AT,
+                        'date' => "UNIX_TIMESTAMP('2020-08-07 10:12:57')",
+                        'day' => static::DAYS_PASSED_BEFORE_UPDATE,
+                    ],
+                ], // raw data for models
+            ],
+            'product latest owner for user and product exists in DB and updated day is bigger than in prepare date' => [
+                [
+                    FakeProductLatestOwnerQueries::USER_ID_WITH_UPDATED_DAY_BIGGER_THAN_IN_PREPARE_DATE => [
+                        'product_id' => static::PRODUCT_ID,
+                        'user_id' => FakeProductLatestOwnerQueries::USER_ID_WITH_UPDATED_DAY_BIGGER_THAN_IN_PREPARE_DATE,
+                        'updated' => static::UPDATED_AT,
+                        'date' => "UNIX_TIMESTAMP('2020-08-07 10:12:57')",
+                        'day' => static::DAYS_PASSED_BEFORE_UPDATE,
+                    ],
+                    8384 => [
+                        'product_id' => static::PRODUCT_ID,
+                        'user_id' => 8384,
+                        'updated' => '2020-02-14 23:47:42',
+                        'date' => "UNIX_TIMESTAMP('2020-02-14 23:47:42')",
+                        'day' => 737833,
+                    ],
+                ], //prepare data without Expression mock for date key
+                [
+                    8384 => [
+                        'product_id' => static::PRODUCT_ID,
+                        'user_id' => 8384,
+                        'updated' => '2020-02-14 23:47:42',
+                        'date' => "UNIX_TIMESTAMP('2020-02-14 23:47:42')",
+                        'day' => 737833,
+                    ],
+                ], // raw data for models
+            ],
+            'product latest owner for user and product exists in DB and updated day is same with prepare date' => [
+                [
+                    FakeProductLatestOwnerQueries::USER_ID_WITH_SAME_UPDATED_DAY => [
+                        'product_id' => static::PRODUCT_ID,
+                        'user_id' => FakeProductLatestOwnerQueries::USER_ID_WITH_SAME_UPDATED_DAY,
+                        'updated' => static::UPDATED_AT,
+                        'date' => "UNIX_TIMESTAMP('2020-08-07 10:12:57')",
+                        'day' => static::DAYS_PASSED_BEFORE_UPDATE,
+                    ],
+                ], //prepare data without Expression mock for date key
+                [], // raw data for models
+            ],
+        ];
+    }
+
+    /**
+     * Test fail save data throw exception.
+     *
+     * @see ProductLatestOwnerHelper::save()
+     * @throws \Exception
+     */
+    public function testSaveThrowExceptionFail(): void
+    {
+        $exceptionMessage = 'Failed to commit transaction: transaction was inactive.';
+
+        $rawData = $this->getDefaultRawData();
+        $prepareData = $this->getDefaultPrepareData();
+        $modelsForSaving = $this->getDefaultModelsForSavingData();
+
+        $this->productMock(true);
+        Test::double(ProductLatestOwnerHelper::class, [
+            'getRawData' => $rawData,
+            'prepareData' => $prepareData,
+            'prepareModelsForSaving' => $modelsForSaving,
+            'getDbConnection' => $this->dbMockFailTransaction($exceptionMessage),
+        ]);
+
+        $this->expectException(\Exception::class);
+        $this->expectExceptionMessage($exceptionMessage);
+        ProductLatestOwnerHelper::update(static::PRODUCT_ID);
+    }
+
+    /**
+     * Get product mock
+     *
+     * @param bool $isProductExists
+     *
+     * @return \AspectMock\Proxy\ClassProxy|\AspectMock\Proxy\InstanceProxy|\AspectMock\Proxy\Verifier|null
+     * @throws \Exception
+     */
+    protected function productMock(bool $isProductExists)
+    {
+        return Test::double(Product::class, ['isProductExists' => $isProductExists]);
+    }
+
+    /**
+     * Get editor journal mock
+     *
+     * @param array $data
+     *
+     * @return \AspectMock\Proxy\ClassProxy|\AspectMock\Proxy\InstanceProxy|\AspectMock\Proxy\Verifier|null
+     * @throws \Exception
+     */
+    protected function editorJournalQueriesMock(array $data)
+    {
+        return Test::double(EditorJournalQueries::class, ['getLastOwnersByEditorJournal' => $data]);
+    }
+
+    /**
+     * Get expression mock
+     *
+     * @return \PHPUnit\Framework\MockObject\MockObject|Expression
+     */
+    protected function expressionMock()
+    {
+        return $this->getMockBuilder(Expression::class)->disableOriginalConstructor()->getMock();
+    }
+
+    /**
+     * Get mock for DB with success transaction
+     *
+     * @return \PHPUnit\Framework\MockObject\MockObject|Connection
+     */
+    protected function dbMockSuccessTransaction()
+    {
+        $dbMock = $this->getMockBuilder('yii\db\Connection')->onlyMethods(['beginTransaction'])->getMock();
+        $transactionMock = $this->getMockBuilder('yii\db\Transaction')->onlyMethods(['commit'])->getMock();
+
+        $dbMock->expects(static::atMost(1))->method('beginTransaction')->willReturn($transactionMock);
+        $transactionMock->expects(static::atMost(1))->method('commit');
+
+        return $dbMock;
+    }
+
+    /**
+     * Get mock db with fail transaction.
+     *
+     * @param string $exceptionMessage
+     *
+     * @return \PHPUnit\Framework\MockObject\MockObject|Connection
+     */
+    protected function dbMockFailTransaction(string $exceptionMessage)
+    {
+        $dbMock = $this->getMockBuilder(Connection::class)
+            ->onlyMethods(['beginTransaction'])
+            ->getMock();
+        $transactionMock = $this->getMockBuilder(Transaction::class)
+            ->onlyMethods(['commit', 'rollBack'])
+            ->getMock();
+
+        $dbMock->expects(static::atMost(1))
+            ->method('beginTransaction')
+            ->willReturn($transactionMock);
+        $transactionMock->expects(static::atMost(1))
+            ->method('commit')
+            ->willThrowException(new Exception($exceptionMessage));
+        $transactionMock->expects(static::atMost(1))
+            ->method('rollBack');
+
+        return $dbMock;
+    }
+
+    /**
+     * Get default raw data.
+     *
+     * @return array[]
+     */
+    protected function getDefaultRawData(): array
+    {
+        return [
+            0 => [
+                'user_id' => static::USER_ID,
+                'date' => static::UPDATED_AT,
+                'day' => static::DAYS_PASSED_BEFORE_UPDATE,
+            ],
+        ];
+    }
+
+    /**
+     * Get default prepare data.
+     *
+     * @return array[]
+     */
+    protected function getDefaultPrepareData(): array
+    {
+        return [
+            static::USER_ID => [
+                'user_id' => static::USER_ID,
+                'date' => static::UPDATED_AT,
+                'day' => static::DAYS_PASSED_BEFORE_UPDATE,
+            ],
+        ];
+    }
+
+    /**
+     * Get default raw data.
+     *
+     * @return array[]
+     */
+    protected function getDefaultModelsForSavingData(): array
+    {
+        return $this->prepareMockModelsForSaving($this->prepareDataWithExpressionMock($this->getDefaultPrepareData()));
+    }
+
+    /**
+     * Prepare data with expression mock.
+     *
+     * @param array $prepareData
+     *
+     * @return array
+     */
+    protected function prepareDataWithExpressionMock(array $prepareData): array
+    {
+        \Yii::$container->set(Expression::class, $this->expressionMock());
+        $result = [];
+
+        foreach ($prepareData as $key => $item) {
+            $item['date'] = $this->expressionMock();
+            $result[$key] = $item;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Prepare mock models for saving.
+     *
+     * @param array $prepareData
+     *
+     * @return array
+     */
+    protected function prepareMockModelsForSaving(array $prepareData): array
+    {
+        $result = [];
+
+        foreach ($prepareData as $item) {
+            $model = new FakeProductLatestOwner();
+            $model->setAttributes($item);
+            $result[] = $model;
+        }
+
+        return $result;
+    }
+}
